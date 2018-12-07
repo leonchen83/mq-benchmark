@@ -1,0 +1,89 @@
+/*
+ * Copyright 2016-2017 Leon Chen
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package activemq.bench;
+
+import com.codahale.metrics.ConsoleReporter;
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.MetricRegistry;
+import org.apache.activemq.ActiveMQConnectionFactory;
+
+import javax.jms.BytesMessage;
+import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
+import javax.jms.Destination;
+import javax.jms.MessageProducer;
+import javax.jms.Session;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * activemq pubsub
+ * 1 producer 2 consumer
+ * 2kb   3218msg/s
+ * 1kb   7397msg/s
+ * 512b 10120msg/s
+ * 256b 15003msg/s
+ *
+ * 1 producer 1 consumer
+ * 2kb   5739msg/s
+ * 1kb   9041msg/s
+ * 512b 20498msg/s
+ * 256b 42959msg/s
+ *
+ * @author Baoyi Chen
+ */
+public class ProducerBench {
+
+	private final static String EXCHANGE_NAME = "bench";
+
+	private static byte[] MESSAGE = new byte[256];
+
+	static {
+		for (int i = 0; i < MESSAGE.length; i++) {
+			MESSAGE[i] = (byte) i;
+		}
+	}
+
+	public static void main(String[] args) throws Exception {
+
+		MetricRegistry registry = new MetricRegistry();
+		Meter meter = registry.meter("activemq.producer.metric");
+		ConsoleReporter reporter = ConsoleReporter.forRegistry(registry).build();
+		reporter.start(1, TimeUnit.SECONDS);
+
+		ConnectionFactory factory = new ActiveMQConnectionFactory("nio://192.168.1.241:61617?jms.useAsyncSend=true");
+		Connection connection = factory.createConnection();
+		connection.start();
+		Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+		Destination dest = session.createTopic(EXCHANGE_NAME);
+		MessageProducer producer = session.createProducer(dest);
+
+		for (int i = 0; i < 4000000; i++) {
+			try {
+				BytesMessage message = session.createBytesMessage();
+				message.writeInt(MESSAGE.length);
+				message.writeBytes(MESSAGE);
+				producer.send(message);
+				meter.mark();
+			} catch (Throwable e) {
+			}
+		}
+		System.out.println(meter.getCount());
+		connection.close();
+
+	}
+
+}
