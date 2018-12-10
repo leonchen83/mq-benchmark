@@ -58,6 +58,7 @@ import java.util.concurrent.TimeUnit;
  * 1kb  25020msg/s
  * 512b 36759msg/s
  * 256b 57223msg/s
+ *
  * @author Baoyi Chen
  */
 public class Producer2Bench {
