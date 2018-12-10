@@ -46,6 +46,13 @@ import java.util.concurrent.TimeUnit;
  * 512b 24182msg/s
  * 256b 38573msg/s
  *
+ * 集群 pubsub
+ * 1 producer 2 consumer
+ * 2kb   8928msg/s
+ * 1kb  14619msg/s
+ * 512b 25319msg/s
+ * 256b 40093msg/s
+ *
  *
  * @author Baoyi Chen
  */
@@ -53,7 +60,7 @@ public class ProducerBench {
 
 	private final static String EXCHANGE_NAME = "bench";
 
-	private static byte[] MESSAGE = new byte[2048];
+	private static byte[] MESSAGE = new byte[256];
 
 	static {
 		for (int i = 0; i < MESSAGE.length; i++) {
@@ -74,7 +81,7 @@ public class ProducerBench {
 		Channel channel = connection.createChannel();
 		channel.exchangeDeclare(EXCHANGE_NAME, "fanout");
 
-		for (int i = 0; i < 2000000; i++) {
+		for (int i = 0; i < 6000000; i++) {
 			try {
 				channel.basicPublish(EXCHANGE_NAME, "", null, MESSAGE);
 				meter.mark();

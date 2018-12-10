@@ -36,7 +36,6 @@ import java.util.concurrent.TimeUnit;
 public class Consumer1Bench {
 
 	private static final String EXCHANGE_NAME = "bench";
-	private static final String QUEUE_NAME = "consumer1";
 
 	public static void main(String[] args) throws Exception {
 		MetricRegistry registry = new MetricRegistry();
@@ -50,8 +49,8 @@ public class Consumer1Bench {
 		final Channel channel = connection.createChannel();
 
 		channel.exchangeDeclare(EXCHANGE_NAME, "fanout");
-		channel.queueDeclare(QUEUE_NAME, false, true, true, null);
-		channel.queueBind(QUEUE_NAME, EXCHANGE_NAME, "");
+		String queueName = channel.queueDeclare().getQueue();
+		channel.queueBind(queueName, EXCHANGE_NAME, "");
 
 		Consumer consumer = new DefaultConsumer(channel) {
 			@Override
@@ -59,6 +58,6 @@ public class Consumer1Bench {
 				meter.mark();
 			}
 		};
-		channel.basicConsume(QUEUE_NAME, true, consumer);
+		channel.basicConsume(queueName, true, consumer);
 	}
 }
