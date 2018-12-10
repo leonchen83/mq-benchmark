@@ -53,14 +53,13 @@ import java.util.concurrent.TimeUnit;
  * 512b 25319msg/s
  * 256b 40093msg/s
  *
- *
  * @author Baoyi Chen
  */
-public class ProducerBench {
+public class Producer1Bench {
 
 	private final static String EXCHANGE_NAME = "bench";
 
-	private static byte[] MESSAGE = new byte[256];
+	private static byte[] MESSAGE = new byte[1024];
 
 	static {
 		for (int i = 0; i < MESSAGE.length; i++) {
@@ -70,7 +69,7 @@ public class ProducerBench {
 
 	public static void main(String[] args) throws Exception {
 		MetricRegistry registry = new MetricRegistry();
-		Meter meter = registry.meter("rabbitmq.producer.metric");
+		Meter meter = registry.meter("rabbitmq.producer1.metric");
 		ConsoleReporter reporter = ConsoleReporter.forRegistry(registry).build();
 		reporter.start(1, TimeUnit.SECONDS);
 
@@ -81,7 +80,7 @@ public class ProducerBench {
 		Channel channel = connection.createChannel();
 		channel.exchangeDeclare(EXCHANGE_NAME, "fanout");
 
-		for (int i = 0; i < 6000000; i++) {
+		for (int i = 0; i < 2000000; i++) {
 			try {
 				channel.basicPublish(EXCHANGE_NAME, "", null, MESSAGE);
 				meter.mark();
