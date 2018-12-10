@@ -44,7 +44,7 @@ public class Consumer1Bench {
 		reporter.start(1, TimeUnit.SECONDS);
 
 		ConnectionFactory factory = new ConnectionFactory();
-		factory.setHost("192.168.1.241");
+		factory.setHost("192.168.1.242");
 		Connection connection = factory.newConnection();
 		final Channel channel = connection.createChannel();
 
