@@ -23,8 +23,8 @@ public class Main {
 				System.out.println("onUnlocked");
 			}
 		});
-		locker1.setTtl(15000);
-		locker1.setHeartbeatInterval(6000);
+		locker1.setTtl(5000);
+		locker1.setHeartbeatInterval(1000);
 		locker1.start();
 		locker1.tryLock(6000, true);
 		SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");

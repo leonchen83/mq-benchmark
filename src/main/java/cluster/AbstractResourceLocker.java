@@ -26,6 +26,7 @@ public abstract class AbstractResourceLocker implements ResourceLocker {
 	enum Status {LOCKED, UNLOCKED, LOCKING, RETRYING};
 
 	//
+	protected int retries = 1;
 	protected final String name;
 	protected final String lock;
 	protected volatile Listener listener;
@@ -35,9 +36,9 @@ public abstract class AbstractResourceLocker implements ResourceLocker {
 	protected final AtomicReference<Status> status = new AtomicReference<>(Status.UNLOCKED);
 
 	//
-	protected void doRenewLock() throws Exception {}
 	protected abstract boolean doUnlock(long timeout);
 	protected abstract boolean doTryLock(long timeout);
+	protected abstract boolean doRenewLock(long timeout) throws Exception;
 
 	/**
 	 *
@@ -59,6 +60,13 @@ public abstract class AbstractResourceLocker implements ResourceLocker {
 		return terminate(this.scheduler, timeout, unit);
 	}
 
+	/**
+	 *
+	 */
+	public void setRetries(int retries) {
+		this.retries = retries;
+	}
+
 	@Override
 	public void setListener(Listener listener) {
 		this.listener = listener;
@@ -69,55 +77,58 @@ public abstract class AbstractResourceLocker implements ResourceLocker {
 	}
 
 	protected final void notifyOnLocked() {
-		final Listener l = this.listener; if(l != null) l.onLocked(this);
+		Listener v = this.listener; if(v != null) { v.onLocked(this); }
 	}
 
-	protected final void notifyOnUnlocked(Exception e) {
-		final Listener l = this.listener; if(l != null) l.onUnlocked(this, e);
+	protected final void notifyOnUnlocked(Exception cause) {
+		Listener v = listener; if(v != null) v.onUnlocked(this, cause);
 	}
 
 	/**
 	 *
 	 */
 	@Override
-	public final boolean isLocked() {
-		return this.status.get() == Status.LOCKED;
+	public final boolean isLocked () {
+		return status.get() == LOCKED;
 	}
 
 	@Override
 	public void unlock(long timeout) {
 		//
 		if(this.status.get() == Status.UNLOCKED) {
-			throw new IllegalStateException("status: " + this.status.get());
+			throw new IllegalStateException("unlock, status: " + this.status.get());
 		}
 
 		//
 		try {
 			synchronized(this.guard) { doUnlock(timeout); }
 		} catch(RuntimeException e) {
-			LOGGER.error("failed to unlock: " + this.lock, e);
+			LOGGER.error("[HA]failed to unlock: " + this.lock, e);
 		} finally {
-			if(this.status.compareAndSet(LOCKED, UNLOCKED)) notifyOnUnlocked(null);
+			if (this.status.compareAndSet(LOCKED, UNLOCKED)) notifyOnUnlocked(null);
 		}
 	}
 
 	@Override
 	public boolean tryLock(long timeout, boolean retry) {
 		//
+		if(Thread.currentThread().isInterrupted()) return false;
 		if(!this.status.compareAndSet(Status.UNLOCKED, Status.LOCKING)) {
-			throw new IllegalStateException("status: " + this.status.get());
+			throw new IllegalStateException("lock, status: " + (this.status.get()));
 		}
 
 		//
 		boolean r = false;
-		if(Thread.currentThread().isInterrupted()) return false;
 		try {
 			synchronized(this.guard) { r = doTryLock(timeout); }
 		} catch(RuntimeException e) {
-			this.status.set(Status.UNLOCKED); throw e;
+			LOGGER.error("[HA]failed to lock: " + this.lock, e);
+			status.set(Status.UNLOCKED); /* LOCKING->UNLOCKED */ throw e;
 		}
+
 		//
-		if(r) status.set(LOCKED); else if(retry) status.set(RETRYING); else status.set(UNLOCKED);
+		if (r) this.status.set(LOCKED);
+		else if ((retry)) this.status.set(RETRYING); else this.status.set(UNLOCKED);
 		return r;
 	}
 
@@ -126,10 +137,10 @@ public abstract class AbstractResourceLocker implements ResourceLocker {
 	 */
 	protected class HeartbeatJob implements Runnable {
 		//
-		private volatile long timestamp = System.currentTimeMillis();
+		private int retries = 0;
+		private long timestamp = System.currentTimeMillis();
 
-		@Override
-		public void run() {
+		@Override public void run() {
 			final long now = System.currentTimeMillis();
 			if(status.get() == Status.LOCKED) {
 				try {
@@ -139,11 +150,20 @@ public abstract class AbstractResourceLocker implements ResourceLocker {
 						LOGGER.info("[HA]start to renew lock: {}, status: {}", lock, status);
 					}
 
-					//
-					synchronized(guard) { doRenewLock(); } // Try to renew lock
-				} catch(Exception e) {
-					LOGGER.error("[HA]failed to renew lock: " + lock, e);
-					if(status.compareAndSet(Status.LOCKED, Status.UNLOCKED)) notifyOnUnlocked(e);
+					if (this.retries < AbstractResourceLocker.this.retries) {
+						boolean r = false;
+						synchronized(guard) { r = doRenewLock(heartbeatInterval); }
+						if (r) retries = 0; else { retries++; }
+						return;
+					}
+
+					LOGGER.error("[HA]failed to renew: " + lock);
+					if (status.compareAndSet(Status.LOCKED, Status.UNLOCKED)) { notifyOnUnlocked(null); }
+				} catch(Exception cause) {
+					retries++;
+					if(this.retries < AbstractResourceLocker.this.retries) return;
+					LOGGER.error("[HA]failed to renew: " + lock, cause);
+					if (status.compareAndSet(Status.LOCKED, Status.UNLOCKED)) { notifyOnUnlocked(cause); }
 				}
 			} else if(status.get() == Status.RETRYING) {
 				try {
@@ -153,12 +173,13 @@ public abstract class AbstractResourceLocker implements ResourceLocker {
 						LOGGER.info("[HA]start to retry lock: {}, status: {}", lock, status);
 					}
 
+					this.retries = 0; // reset
+
 					//
-					boolean r = false;
-					synchronized(guard) { r = doTryLock(heartbeatInterval); } // Try to lock
-					if(r && status.compareAndSet(Status.RETRYING, Status.LOCKED)) notifyOnLocked();
-				} catch(Exception e) {
-					LOGGER.error("[HA]failed to retry lock: " + lock, e);
+					boolean locked = false; synchronized(guard) { locked = doTryLock(heartbeatInterval); }
+					if((locked) && status.compareAndSet(Status.RETRYING, Status.LOCKED)) notifyOnLocked();
+				} catch(Throwable t) {
+					LOGGER.error("[HA]failed to retry: " + lock, t);
 				}
 			}
 		}
