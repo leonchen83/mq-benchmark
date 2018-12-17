@@ -25,6 +25,7 @@ public class Main {
 		});
 		locker1.setTtl(5000);
 		locker1.setHeartbeatInterval(1000);
+		locker1.setRetries(2);
 		locker1.start();
 		locker1.tryLock(6000, true);
 		SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
